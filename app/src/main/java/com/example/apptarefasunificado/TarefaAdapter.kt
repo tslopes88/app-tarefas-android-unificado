@@ -4,91 +4,90 @@ import android.graphics.Paint
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.CheckBox
-import android.widget.ImageButton
-import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.example.apptarefasunificado.databinding.TarefaIndividualBinding
 
 class TarefaAdapter(
-    private var tarefas: MutableList<Tarefa>,
     private val onToggleConcluida: (Tarefa) -> Unit,
     private val onEditClick: (Tarefa) -> Unit,
     private val onDeleteClick: (Tarefa) -> Unit
-) : RecyclerView.Adapter<TarefaAdapter.TarefaViewHolder>() {
+) : ListAdapter<Tarefa, TarefaAdapter.TarefaViewHolder>(TarefaDiffCallback()) {
 
-    class TarefaViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val checkConcluida: CheckBox = itemView.findViewById(R.id.checkConcluida)
-        val txtNome: TextView = itemView.findViewById(R.id.itemNome)
-        val txtDescricao: TextView = itemView.findViewById(R.id.itemDescricao)
-        val txtData: TextView = itemView.findViewById(R.id.itemData)
-        val txtHora: TextView = itemView.findViewById(R.id.itemHora)
-        val txtPrioridade: TextView = itemView.findViewById(R.id.itemPrioridade)
-        val btnEditar: ImageButton = itemView.findViewById(R.id.btnEditarItem)
-        val btnExcluir: ImageButton = itemView.findViewById(R.id.btnExcluirItem)
-    }
+    class TarefaViewHolder(val binding: TarefaIndividualBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TarefaViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.tarefa_individual, parent, false)
-        return TarefaViewHolder(view)
+        val binding = TarefaIndividualBinding.inflate(
+            LayoutInflater.from(parent.context),
+            parent,
+            false
+        )
+        return TarefaViewHolder(binding)
     }
 
     override fun onBindViewHolder(holder: TarefaViewHolder, position: Int) {
-        val tarefa = tarefas[position]
+        val tarefa = getItem(position)
         val context = holder.itemView.context
+        val b = holder.binding
 
-        holder.txtNome.text = tarefa.nome
-        holder.txtDescricao.text = if (tarefa.descricao.isNotBlank()) tarefa.descricao else "Sem descrição"
-        holder.txtData.text = "📅 ${tarefa.data}"
-        holder.txtHora.text = "⏰ ${tarefa.hora}"
-        holder.txtPrioridade.text = tarefa.prioridade.uppercase()
+        b.tvNome.text = tarefa.nome
+        b.tvDescricao.text = tarefa.descricao
 
-        // Cores de prioridade obtidas do colors.xml
-        val corPrioridade = when (tarefa.prioridade) {
-            "Alta" -> ContextCompat.getColor(context, R.color.colorPriorityHigh)
-            "Média" -> ContextCompat.getColor(context, R.color.colorPriorityMedium)
-            else -> ContextCompat.getColor(context, R.color.colorPriorityLow)
+        val dataHoraFormatada = when {
+            tarefa.data.isNotEmpty() && tarefa.hora.isNotEmpty() -> "${tarefa.data} · ${tarefa.hora}"
+            tarefa.data.isNotEmpty() -> tarefa.data
+            tarefa.hora.isNotEmpty() -> tarefa.hora
+            else -> ""
         }
-        holder.txtPrioridade.setBackgroundColor(corPrioridade)
+        b.tvDataHora.text = dataHoraFormatada
+        b.tvDataHora.visibility = if (dataHoraFormatada.isNotEmpty()) View.VISIBLE else View.GONE
+        b.tvDescricao.visibility = if (tarefa.descricao.isNotEmpty()) View.VISIBLE else View.GONE
 
-        holder.checkConcluida.setOnCheckedChangeListener(null)
-        holder.checkConcluida.isChecked = tarefa.concluida
-
-        if (tarefa.concluida) {
-            holder.txtNome.paintFlags = holder.txtNome.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
-            holder.txtNome.setTextColor(ContextCompat.getColor(context, R.color.colorTextCompleted))
-            holder.itemView.alpha = 0.65f
+        // Efeito de riscado e cor de conclusão
+        val flags = if (tarefa.concluida) {
+            Paint.STRIKE_THRU_TEXT_FLAG or b.tvNome.paintFlags
         } else {
-            holder.txtNome.paintFlags = holder.txtNome.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
-            holder.txtNome.setTextColor(ContextCompat.getColor(context, R.color.colorText))
-            holder.itemView.alpha = 1.0f
+            b.tvNome.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
+        }
+        b.tvNome.paintFlags = flags
+
+        val corTexto = if (tarefa.concluida) {
+            ContextCompat.getColor(context, R.color.colorTextCompleted)
+        } else {
+            ContextCompat.getColor(context, R.color.colorText)
+        }
+        b.tvNome.setTextColor(corTexto)
+
+        // Limpa o listener antes de setar o estado para evitar disparos em reciclagem de View
+        b.cbConcluida.setOnCheckedChangeListener(null)
+        b.cbConcluida.isChecked = tarefa.concluida
+        b.cbConcluida.setOnCheckedChangeListener { _, isChecked ->
+            onToggleConcluida(tarefa.copy(concluida = isChecked))
         }
 
-        holder.checkConcluida.setOnCheckedChangeListener { _, isChecked ->
-            tarefa.concluida = isChecked
-            onToggleConcluida(tarefa)
-        }
-
-        holder.btnEditar.setOnClickListener {
-            val pos = holder.bindingAdapterPosition
-            if (pos != RecyclerView.NO_POSITION && pos < tarefas.size) {
-                onEditClick(tarefas[pos])
+        // Faixa de Prioridade
+        b.viewPrioridade.setBackgroundColor(
+            when (tarefa.prioridade) {
+                "Alta" -> ContextCompat.getColor(context, R.color.colorPriorityHigh)
+                "Baixa" -> ContextCompat.getColor(context, R.color.colorPriorityLow)
+                else -> ContextCompat.getColor(context, R.color.colorPriorityMedium)
             }
+        )
+
+        b.root.setOnClickListener {
+            onEditClick(tarefa)
         }
 
-        holder.btnExcluir.setOnClickListener {
-            val pos = holder.bindingAdapterPosition
-            if (pos != RecyclerView.NO_POSITION && pos < tarefas.size) {
-                onDeleteClick(tarefas[pos])
-            }
+        b.root.setOnLongClickListener {
+            onDeleteClick(tarefa)
+            true
         }
     }
 
-    override fun getItemCount(): Int = tarefas.size
-
-    fun atualizarLista(novaLista: List<Tarefa>) {
-        this.tarefas = novaLista.toMutableList()
-        notifyDataSetChanged()
+    class TarefaDiffCallback : DiffUtil.ItemCallback<Tarefa>() {
+        override fun areItemsTheSame(oldItem: Tarefa, newItem: Tarefa): Boolean = oldItem.id == newItem.id
+        override fun areContentsTheSame(oldItem: Tarefa, newItem: Tarefa): Boolean = oldItem == newItem
     }
 }
